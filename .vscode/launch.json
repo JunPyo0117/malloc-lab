@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "C Debug (CodeLLDB)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${fileDirname}/${fileBasenameNoExtension}",
+            "args": [],
+            "cwd": "${fileDirname}",
+            "preLaunchTask": "C: gcc build active file",
+            "stdio": [null, null, null],
+            "terminal": "integrated"
+        }
+    ],
+    "compounds": []
+} 
