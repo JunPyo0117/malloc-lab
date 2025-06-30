@@ -22,6 +22,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <limits.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -89,6 +90,9 @@ static char *heap_listp;  /* 힙의 시작 부분을 가리키는 전역 포인�
 // next-fit을 위한 전역 변수 
 static char *heap_curp; // 마지막으로 할당한 위치를 기억
 
+// best-fit을 위한 전역 변수
+static char *best_p; // 가용블럭 - 할당할 블럭의 차가 작은 대로 업데이트
+
 // 함수 선언 추가
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
@@ -110,7 +114,7 @@ int mm_init(void)
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));     /* 에필로그 헤더 */
     heap_listp += (2*WSIZE); // heap_listp가 프롤로그 블록의 페이로드 시작점(bp)을 가리키도록 설정
     
-    // next-fit 마지막 위치 기억, 처음에는 같지만 place에서 업데이트 되면 달라짐
+    // next-fit 마지막 위치 기억, 처음에는 heap_listp와 같지만 place에서 업데이트 되면 달라짐
     heap_curp = heap_listp;
 
     // 빈 힙을 CHUNKSIZE 바이트의 가용 블록으로 확장
@@ -244,9 +248,11 @@ static void *coalesce(void *bp) {
     }
 
     // next-fit을 위해 heap_curp가 유효한 범위에 있는지 확인하고 필요시 업데이트
-    if (heap_curp > (char *)bp && heap_curp < (char *)bp + size) {
-        heap_curp = bp;
-    }
+    // heap_curp < (char *)bp + size 내부 외부에 있는지 확인
+    // if (heap_curp > (char *)bp && heap_curp < (char *)bp + size) {
+    //     heap_curp = bp; // 병합된 블록의 시작점으로 이동
+    // }
+    heap_curp = bp;
 
     return bp;
 }
@@ -281,7 +287,7 @@ static void *find_fit(size_t asize)
     // first-fit 검색: 힙을 순회하며 첫 번째로 발견되는 적합한 가용 블록을 반환
     void *bp;
 
-    // // 힙의 시작부터 에필로그 블록(크기 0)까지 모든 블록을 순회
+    // 힙의 시작부터 에필로그 블록(크기 0)까지 모든 블록을 순회
     // for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
     //     // 가용 블록이면서 요청 크기(asize)를 수용할 수 있는 블록을 찾으면
     //     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
@@ -289,27 +295,49 @@ static void *find_fit(size_t asize)
     //     }
     // }
 
-    // next-fit 검색: 마지막으로 할당한 위치부터 힙을 순히하며 첫 번째로 발견되는 가용 블록을 반환
-    // 마지막 위치부터 에필로그까지
+    // // next-fit 검색: 마지막으로 할당한 위치부터 힙을 순히하며 첫 번째로 발견되는 가용 블록을 반환
+    // // 첫 번째 검색: 마지막 heap_curp 위치부터 에필로그까지
+    // for (bp = heap_curp; GET_SIZE(HDRP(bp))>0; bp = NEXT_BLKP(bp)) {
+    //     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    //         heap_curp = bp; // 찾은 위치를 기억
+    //         return bp;
+    //     }
+    // }
+    
+    // // 두 번째 검색: 처음부터 heap_curp까지
+    // for (bp = heap_listp; bp < heap_curp; bp = NEXT_BLKP(bp)) {
+    //     if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    //         heap_curp = bp; // 찾은 위치를 기억
+    //         return bp;
+    //     }
+    // }
 
-    void *start_bp = heap_curp;
-    
-    for (bp = heap_curp; GET_SIZE(HDRP(bp))>0; bp = NEXT_BLKP(bp)) {
+
+    // // best-fit 검색: 처음부터 에필로그까지 순회하여 할당할 블럭과 가용 블록의 차가 제일 적은 곳에 블럭을 할당
+    int min_diff = INT_MAX;
+    int cur_diff = 0;
+    best_p = NULL; 
+
+    for (bp = heap_listp;GET_SIZE(HDRP(bp))>0;bp = NEXT_BLKP(bp)) {
+        // 가용 블록이면서 요청 크기(asize)를 수용할 수 있는 블록을 찾으면
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            heap_curp = bp; // 찾은 위치를 기억
-            return bp;
+            cur_diff = GET_SIZE(HDRP(bp)) - asize;
+            if (cur_diff < min_diff ) {
+               min_diff = cur_diff;
+               best_p = bp;
+
+                if (cur_diff == 0) {
+                    break;
+                }
+            }
+            // 적합한 핏한거 찾았을 때
+            
         }
     }
     
-    // 두 번째 검색: 처음부터 heap_curp까지
-    for (bp = heap_listp; bp < start_bp; bp = NEXT_BLKP(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            heap_curp = bp; // 찾은 위치를 기억
-            return bp;
-        }
-    }
     
-    return NULL; // 적합한 블록을 찾지 못한 경우
+    return best_p;
+    // return NULL; // 적합한 블록을 찾지 못한 경우
 }
 
 
@@ -318,10 +346,6 @@ static void place(void *bp, size_t asize) {
     
     // 현재 가용 블록의 전체 크기 계산
     size_t csize = GET_SIZE(HDRP(bp));
-
-    // next-fit, 아래 bp의 위치가 바뀌기 때문에 오리지널 bp 저장
-    void *original_bp = bp;
-
 
     // 남은 공간이 최소 블록 크기(16바이트) 이상이면 분할 수행
     if ((csize - asize) >= (2*DSIZE)) {
@@ -339,9 +363,6 @@ static void place(void *bp, size_t asize) {
         PUT(HDRP(bp), PACK(csize, 1));           // 전체 블록을 할당된 상태로 설정
         PUT(FTRP(bp), PACK(csize, 1));
     }
-
-    // next-fit, place 함수에서 계속 업데이트 됨 
-    heap_curp = NEXT_BLKP(original_bp);
 }
 
 
