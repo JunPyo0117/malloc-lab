@@ -60,7 +60,7 @@ team_t team = {
 // 기본 상수와 매크로
 #define WSIZE 4        /* 워드 및 헤더/푸터 크기 (바이트) */
 #define DSIZE 8        /* 더블 워드 크기 (바이트) */
-#define CHUNKSIZE (1<<12) /* 힙을 확장할 때 한 번에 늘리는 크기(4096바이트, 4KB).  페이지 크기가 4kb라 */
+#define CHUNKSIZE (1<<12) /* 힙을 확장할 때 한 번에 늘리는 크기(4096바이트, 4KB).  페이지 크기가 4KB라 */
 
 // 두 값 중 큰 값 반환
 #define MAX(x, y) ((x) > (y)? (x) : (y))
@@ -85,13 +85,22 @@ team_t team = {
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) // bp에 현재 블록의 크기를 더해 다음 블록의 bp를 계산
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) // bp에서 이전 블록의 크기를 빼서 이전 블록의 bp를 계산
 
-static char *heap_listp;  /* 힙의 시작 부분을 가리키는 전역 포인터입니다. 정확히는 프롤로그 블록의 bp를 가리키게 됩니다. find_fit에서 힙 순회의 시작점으로 사용 */
+
+// 명시적 가용 리스트를 위한 매크로
+// 이전,이후 블럭의 주소를 알아야하기 때문에  이중 포인터 사용
+#define PRED_FREEP(bp) (*(void **)((char *)(bp)))
+#define NEXT_FREEP(bp) (*(void **)((char *)(bp) + WSIZE))
+
+static char *heap_listp;  /* 힙의 시작 부분을 가리키는 전역 포인터. 정확히는 프롤로그 블록의 bp를 가리키게 됨. find_fit에서 힙 순회의 시작점으로 사용 */
 
 // next-fit을 위한 전역 변수 
 static char *heap_curp; // 마지막으로 할당한 위치를 기억
 
 // best-fit을 위한 전역 변수
-static char *best_p; // 가용블럭 - 할당할 블럭의 차가 작은 대로 업데이트
+static char *best_p; // 베스트 가용 블록의 포인터
+
+// 명시적 가용리스트를 위한 전역 변수
+static char *free_listp = NULL; // 가용 리스트의 "페이로드" (첫 번째 블록의 bp)
 
 // 함수 선언 추가
 static void *extend_heap(size_t words);
@@ -99,6 +108,9 @@ static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
 
+//명시적
+static void insert_free_block(void *bp);
+static void delete_free_block(void *bp);
 /* 
  * mm_init - initialize the malloc package.
  */
@@ -140,6 +152,26 @@ static void *extend_heap(size_t words) {
     
     // 이전 블록이 가용 가능한 경우 합병
     return coalesce(bp);
+}
+
+static void insert_free_block(void *bp) {
+    // 1. 리스트가 비어있는 경우
+    if (free_listp == NULL) {
+        PRED_FREEP(bp) = NULL; // 새 블록의 prev = NULL
+        NEXT_FREEP(bp) = NULL; // 새 블록의 next = NULL
+        free_listp = bp;      // 헤드 포인터 업데이트
+    }
+    // 2. 리스트에 기존 블록들이 있는 경우 (맨 앞에 삽입)
+    else {
+        PRED_FREEP(bp) = NULL;           // 새 블록의 prev = NULL
+        NEXT_FREEP(bp) = free_listp;     // 새 블록의 next = 기존 첫 블록
+        PRED_FREEP(free_listp) = bp;     // 기존 첫 블록의 prev = 새 블록
+        free_listp = bp;                 // 헤드 포인터 업데이트
+    }
+}
+
+static void delete_free_block(void *bp) {
+
 }
 
 /* 
@@ -323,19 +355,16 @@ static void *find_fit(size_t asize)
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
             cur_diff = GET_SIZE(HDRP(bp)) - asize;
             if (cur_diff < min_diff ) {
-               min_diff = cur_diff;
-               best_p = bp;
+                min_diff = cur_diff;
+                best_p = bp;
 
                 if (cur_diff == 0) {
                     break;
                 }
             }
             // 적합한 핏한거 찾았을 때
-            
         }
     }
-    
-    
     return best_p;
     // return NULL; // 적합한 블록을 찾지 못한 경우
 }
