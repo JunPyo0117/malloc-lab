@@ -2,16 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "C Debug (CodeLLDB)",
+            "name": "Debug mdriver",
             "type": "lldb",
             "request": "launch",
-            "program": "${fileDirname}/${fileBasenameNoExtension}",
-            "args": [],
-            "cwd": "${fileDirname}",
-            "preLaunchTask": "C: gcc build active file",
-            "stdio": [null, null, null],
-            "terminal": "integrated"
+            "program": "${workspaceFolder}/mdriver",
+            "args": ["-V"],
+            "cwd": "${workspaceFolder}",
+            "preLaunchTask": "build"
         }
-    ],
-    "compounds": []
+    ]
 } 
